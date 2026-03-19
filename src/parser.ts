@@ -1,59 +1,7 @@
-import YAML from "yaml";
+import SwaggerParser from "@apidevtools/swagger-parser";
+import type { OpenAPI, OpenAPIV3 } from "openapi-types";
 
-// ── OpenAPI types (minimal subset we need) ──────────────
-
-export interface OpenAPISpec {
-  openapi: string;
-  info: { title: string; version: string; description?: string };
-  servers?: { url: string }[];
-  paths: Record<string, PathItem>;
-  components?: { schemas?: Record<string, SchemaObject> };
-}
-
-export interface PathItem {
-  get?: Operation;
-  post?: Operation;
-  put?: Operation;
-  patch?: Operation;
-  delete?: Operation;
-  parameters?: Parameter[];
-}
-
-export interface Operation {
-  operationId?: string;
-  summary?: string;
-  description?: string;
-  parameters?: Parameter[];
-  requestBody?: RequestBody;
-  responses?: Record<string, unknown>;
-  tags?: string[];
-}
-
-export interface Parameter {
-  name: string;
-  in: "query" | "path" | "header" | "cookie";
-  required?: boolean;
-  description?: string;
-  schema?: SchemaObject;
-}
-
-export interface RequestBody {
-  required?: boolean;
-  content?: Record<string, { schema?: SchemaObject }>;
-}
-
-export interface SchemaObject {
-  type?: string;
-  format?: string;
-  description?: string;
-  enum?: string[];
-  items?: SchemaObject;
-  properties?: Record<string, SchemaObject>;
-  required?: string[];
-  $ref?: string;
-}
-
-// ── Parsed tool representation ──────────────────────────
+// ── Re-export types consumers might need ────────────────
 
 export interface ParsedTool {
   name: string;
@@ -73,61 +21,95 @@ export interface ParsedParam {
   zodType: string;
 }
 
-// ── Spec loading ────────────────────────────────────────
+export interface ParsedSpec {
+  title: string;
+  version: string;
+  baseUrl: string;
+  tools: ParsedTool[];
+}
 
-export async function loadSpec(source: string): Promise<OpenAPISpec> {
-  let raw: string;
+export interface FilterOptions {
+  include?: string[];
+  exclude?: string[];
+}
 
-  if (source.startsWith("http://") || source.startsWith("https://")) {
-    const res = await fetch(source);
-    if (!res.ok) throw new Error(`Failed to fetch spec: ${res.status} ${res.statusText}`);
-    raw = await res.text();
-  } else {
-    const { readFile } = await import("node:fs/promises");
-    raw = await readFile(source, "utf-8");
-  }
+// ── Spec loading (uses swagger-parser for full $ref dereferencing) ──
 
-  // Try JSON first, then YAML
+export async function loadSpec(source: string): Promise<OpenAPI.Document> {
   try {
-    return JSON.parse(raw) as OpenAPISpec;
-  } catch {
-    return YAML.parse(raw) as OpenAPISpec;
+    return await SwaggerParser.dereference(source);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+
+    if (msg.includes("ENOENT") || msg.includes("no such file")) {
+      throw new Error(`Could not read spec file: ${source}`);
+    }
+    if (msg.includes("HTTP ERROR") || msg.includes("Not Found")) {
+      throw new Error(`Failed to fetch spec from URL: ${source}`);
+    }
+
+    throw new Error(`Failed to parse OpenAPI spec: ${msg}`);
   }
 }
 
 // ── Spec parsing ────────────────────────────────────────
 
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete"] as const;
+const MAX_TOOL_NAME_LENGTH = 64;
 
-export function parseSpec(spec: OpenAPISpec): {
-  title: string;
-  version: string;
-  baseUrl: string;
-  tools: ParsedTool[];
-} {
-  const baseUrl = spec.servers?.[0]?.url ?? "https://api.example.com";
+export function parseSpec(
+  spec: OpenAPI.Document,
+  filters?: FilterOptions,
+): ParsedSpec {
+  const doc = spec as OpenAPIV3.Document;
+  const baseUrl = doc.servers?.[0]?.url ?? "https://api.example.com";
   const tools: ParsedTool[] = [];
+  const nameCount = new Map<string, number>();
 
-  for (const [path, pathItem] of Object.entries(spec.paths)) {
-    const pathParams = pathItem.parameters ?? [];
+  if (!doc.paths) {
+    return { title: doc.info.title, version: doc.info.version, baseUrl, tools };
+  }
+
+  for (const [path, pathItem] of Object.entries(doc.paths)) {
+    if (!pathItem) continue;
+
+    // Apply include/exclude filters
+    if (filters?.include?.length && !filters.include.some((p) => matchPath(path, p))) continue;
+    if (filters?.exclude?.length && filters.exclude.some((p) => matchPath(path, p))) continue;
+
+    const pathParams = (pathItem.parameters ?? []) as OpenAPIV3.ParameterObject[];
 
     for (const method of HTTP_METHODS) {
       const operation = pathItem[method];
       if (!operation) continue;
 
-      const name = toolName(operation, method, path);
+      let name = toolName(operation, method, path);
+
+      // Truncate to 64 chars (Claude Desktop limit)
+      if (name.length > MAX_TOOL_NAME_LENGTH) {
+        const hash = simpleHash(name);
+        name = name.slice(0, MAX_TOOL_NAME_LENGTH - 5) + "_" + hash;
+      }
+
+      // Detect collisions
+      const count = nameCount.get(name) ?? 0;
+      nameCount.set(name, count + 1);
+      if (count > 0) {
+        name = name.slice(0, MAX_TOOL_NAME_LENGTH - 2) + "_" + count;
+      }
+
       const description = truncate(
         operation.summary ?? operation.description ?? `${method.toUpperCase()} ${path}`,
         80,
       );
 
       // Merge path-level + operation-level params
-      const allParams = [...pathParams, ...(operation.parameters ?? [])];
+      const allParams = [...pathParams, ...((operation.parameters ?? []) as OpenAPIV3.ParameterObject[])];
       const params = allParams
         .filter((p) => p.in === "path" || p.in === "query")
-        .map((p) => paramToParsed(p, spec));
+        .map((p) => paramToParsed(p));
 
-      const bodyParams = extractBodyParams(operation.requestBody, spec);
+      const bodyParams = extractBodyParams(operation.requestBody as OpenAPIV3.RequestBodyObject | undefined);
 
       tools.push({
         name,
@@ -142,8 +124,8 @@ export function parseSpec(spec: OpenAPISpec): {
   }
 
   return {
-    title: spec.info.title,
-    version: spec.info.version,
+    title: doc.info.title,
+    version: doc.info.version,
     baseUrl,
     tools,
   };
@@ -151,16 +133,20 @@ export function parseSpec(spec: OpenAPISpec): {
 
 // ── Helpers ─────────────────────────────────────────────
 
-function toolName(op: Operation, method: string, path: string): string {
+function toolName(op: OpenAPIV3.OperationObject, method: string, path: string): string {
   if (op.operationId) {
-    return toSnakeCase(op.operationId);
+    return sanitizeName(toSnakeCase(op.operationId));
   }
-  // Fallback: method + path → "get_users_by_id"
   const segments = path
     .split("/")
     .filter(Boolean)
     .map((s) => s.replace(/[{}]/g, ""));
-  return toSnakeCase(`${method}_${segments.join("_")}`);
+  return sanitizeName(toSnakeCase(`${method}_${segments.join("_")}`));
+}
+
+function sanitizeName(s: string): string {
+  // Strip path traversal and non-alphanumeric chars (except underscore)
+  return s.replace(/[^a-z0-9_]/g, "").replace(/^_+|_+$/g, "");
 }
 
 function toSnakeCase(s: string): string {
@@ -177,65 +163,69 @@ function truncate(s: string, max: number): string {
   return s.slice(0, max - 1) + "…";
 }
 
-function resolveRef(ref: string, spec: OpenAPISpec): SchemaObject | undefined {
-  // Only handles #/components/schemas/X
-  const match = ref.match(/^#\/components\/schemas\/(.+)$/);
-  if (!match) return undefined;
-  return spec.components?.schemas?.[match[1]];
+function simpleHash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h).toString(36).slice(0, 4);
 }
 
-function resolveSchema(schema: SchemaObject | undefined, spec: OpenAPISpec): SchemaObject | undefined {
-  if (!schema) return undefined;
-  if (schema.$ref) return resolveRef(schema.$ref, spec);
-  return schema;
+function matchPath(path: string, pattern: string): boolean {
+  // Simple glob: /pets/* matches /pets/123, /pets/** matches /pets/123/toys
+  const regex = pattern
+    .replace(/\*\*/g, ".*")
+    .replace(/\*/g, "[^/]*");
+  return new RegExp(`^${regex}$`).test(path);
 }
 
-function schemaToZodType(schema: SchemaObject | undefined, spec: OpenAPISpec): string {
-  const resolved = resolveSchema(schema, spec);
-  if (!resolved) return "z.string()";
+function schemaToZodType(schema: OpenAPIV3.SchemaObject | undefined): string {
+  if (!schema) return "z.string()";
 
-  if (resolved.enum) {
-    const values = resolved.enum.map((v) => `"${v}"`).join(", ");
+  if (schema.enum) {
+    const values = schema.enum.map((v) => `"${v}"`).join(", ");
     return `z.enum([${values}])`;
   }
 
-  switch (resolved.type) {
+  switch (schema.type) {
     case "integer":
     case "number":
       return "z.number()";
     case "boolean":
       return "z.boolean()";
     case "array":
-      return `z.array(${schemaToZodType(resolved.items, spec)})`;
+      return `z.array(${schemaToZodType(schema.items as OpenAPIV3.SchemaObject)})`;
     default:
       return "z.string()";
   }
 }
 
-function paramToParsed(p: Parameter, spec: OpenAPISpec): ParsedParam {
+function paramToParsed(p: OpenAPIV3.ParameterObject): ParsedParam {
   return {
     name: p.name,
     location: p.in as "path" | "query",
     required: p.required ?? p.in === "path",
     description: truncate(p.description ?? p.name, 60),
-    zodType: schemaToZodType(p.schema, spec),
+    zodType: schemaToZodType(p.schema as OpenAPIV3.SchemaObject | undefined),
   };
 }
 
-function extractBodyParams(body: RequestBody | undefined, spec: OpenAPISpec): ParsedParam[] {
+function extractBodyParams(body: OpenAPIV3.RequestBodyObject | undefined): ParsedParam[] {
   if (!body) return [];
 
-  const content = body.content?.["application/json"]?.schema;
-  const schema = resolveSchema(content, spec);
-  if (!schema?.properties) return [];
+  const content = body.content?.["application/json"]?.schema as OpenAPIV3.SchemaObject | undefined;
+  if (!content?.properties) return [];
 
-  const required = new Set(schema.required ?? []);
+  const required = new Set(content.required ?? []);
 
-  return Object.entries(schema.properties).map(([name, prop]) => ({
-    name,
-    location: "body" as const,
-    required: required.has(name),
-    description: truncate(prop.description ?? name, 60),
-    zodType: schemaToZodType(prop, spec),
-  }));
+  return Object.entries(content.properties).map(([name, prop]) => {
+    const schema = prop as OpenAPIV3.SchemaObject;
+    return {
+      name,
+      location: "body" as const,
+      required: required.has(name),
+      description: truncate(schema.description ?? name, 60),
+      zodType: schemaToZodType(schema),
+    };
+  });
 }

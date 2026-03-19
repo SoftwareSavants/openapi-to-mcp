@@ -127,11 +127,16 @@ function createServer(getConfig: () => ApiConfig): McpServer {
 }
 
 async function main() {
-  const mode = process.argv.includes("--http") ? "http" : "stdio";
+  const mode = process.argv.includes("--http") ? "http"
+    : process.argv.includes("--sse") ? "sse"
+    : "stdio";
 
   if (mode === "http") {
     const { startHttp } = await import("./transports/http.js");
     await startHttp(createServer);
+  } else if (mode === "sse") {
+    const { startSse } = await import("./transports/sse.js");
+    await startSse(createServer);
   } else {
     const config = getApiConfig();
     const server = createServer(() => config);

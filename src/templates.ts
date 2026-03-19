@@ -14,8 +14,10 @@ export function packageJson(name: string): string {
         build: "tsc",
         start: "node --env-file=.env dist/index.js",
         "start:http": "node --env-file=.env dist/index.js --http",
+        "start:sse": "node --env-file=.env dist/index.js --sse",
         dev: "tsx --env-file=.env src/index.ts",
         "dev:http": "tsx --env-file=.env src/index.ts --http",
+        "dev:sse": "tsx --env-file=.env src/index.ts --sse",
       },
       dependencies: {
         "@modelcontextprotocol/sdk": "^1.0.0",
@@ -276,6 +278,54 @@ export async function startHttp(
 }
 `;
 
+export const sseTransportTs = [
+  'import express from "express";',
+  'import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";',
+  'import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";',
+  'import { getApiConfig } from "../auth.js";',
+  'import type { ApiConfig } from "../types.js";',
+  "",
+  "export async function startSse(",
+  "  createServer: (getConfig: () => ApiConfig) => McpServer,",
+  ") {",
+  "  const port = Number(process.env.PORT ?? 3000);",
+  "  const config = getApiConfig();",
+  "",
+  "  const app = express();",
+  "",
+  "  const sessions = new Map<string, SSEServerTransport>();",
+  "",
+  '  app.get("/sse", async (req, res) => {',
+  '    const transport = new SSEServerTransport("/messages", res);',
+  "    sessions.set(transport.sessionId, transport);",
+  "",
+  "    const server = createServer(() => config);",
+  "    await server.connect(transport);",
+  "",
+  "    transport.onclose = () => {",
+  "      sessions.delete(transport.sessionId);",
+  "    };",
+  "  });",
+  "",
+  '  app.post("/messages", async (req, res) => {',
+  "    const sessionId = req.query.sessionId as string;",
+  "    const transport = sessions.get(sessionId);",
+  "",
+  "    if (!transport) {",
+  '      res.status(400).json({ error: "No active session." });',
+  "      return;",
+  "    }",
+  "",
+  "    await transport.handlePostMessage(req, res);",
+  "  });",
+  "",
+  "  app.listen(port, () => {",
+  "    console.log(`MCP SSE server listening on port ${port}`);",
+  "    console.log(`SSE endpoint: http://localhost:${port}/sse`);",
+  "  });",
+  "}",
+].join("\n") + "\n";
+
 // ── Dynamic files (generated per-spec) ──────────────────
 
 export function toolFile(tool: ParsedTool): string {
@@ -386,11 +436,16 @@ ${registrations}
 }
 
 async function main() {
-  const mode = process.argv.includes("--http") ? "http" : "stdio";
+  const mode = process.argv.includes("--http") ? "http"
+    : process.argv.includes("--sse") ? "sse"
+    : "stdio";
 
   if (mode === "http") {
     const { startHttp } = await import("./transports/http.js");
     await startHttp(createServer);
+  } else if (mode === "sse") {
+    const { startSse } = await import("./transports/sse.js");
+    await startSse(createServer);
   } else {
     const config = getApiConfig();
     const server = createServer(() => config);

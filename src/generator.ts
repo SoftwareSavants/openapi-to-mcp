@@ -28,6 +28,7 @@ export async function generate(opts: GenerateOptions) {
     ["src/auth.ts", T.authTs],
     ["src/transports/stdio.ts", T.stdioTs],
     ["src/transports/http.ts", T.httpTransportTs],
+    ["src/transports/sse.ts", T.sseTransportTs],
     ["src/oauth-provider.ts", T.oauthProviderTs],
   ];
 

@@ -1,90 +1,73 @@
 #!/usr/bin/env node
 
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { Command } from "commander";
 import { loadSpec, parseSpec } from "./parser.js";
 import { generate } from "./generator.js";
 
-// ── CLI ─────────────────────────────────────────────────
+const program = new Command();
 
-const args = process.argv.slice(2);
+program
+  .name("openapi-to-mcp")
+  .description("Generate a lean MCP server from any OpenAPI spec")
+  .version("1.0.0")
+  .argument("<spec>", "OpenAPI spec file path or URL (JSON or YAML)")
+  .option("-o, --output <dir>", "Output directory (default: ./<server-name>-mcp)")
+  .option("-n, --name <name>", "Server name (default: from spec info.title)")
+  .option("--include <patterns...>", "Only include paths matching these globs (e.g. /pets/*)")
+  .option("--exclude <patterns...>", "Exclude paths matching these globs")
+  .option("--force", "Overwrite existing output directory without prompting")
+  .action(async (specSource: string, opts) => {
+    console.log(`Loading spec from ${specSource}...`);
+    const spec = await loadSpec(specSource);
+    const parsed = parseSpec(spec, {
+      include: opts.include,
+      exclude: opts.exclude,
+    });
 
-function usage(): never {
-  console.log(`
-  openapi-to-mcp — Generate a lean MCP server from an OpenAPI spec
+    const serverName = opts.name ?? toSlug(parsed.title);
+    const outputDir = resolve(opts.output ?? `./${serverName}-mcp`);
 
-  Usage:
-    openapi-to-mcp <spec> [options]
-
-  Arguments:
-    spec              OpenAPI spec file path or URL (JSON or YAML)
-
-  Options:
-    -o, --output      Output directory (default: ./<server-name>-mcp)
-    -n, --name        Server name (default: from spec info.title)
-    -h, --help        Show this help
-
-  Examples:
-    openapi-to-mcp https://petstore3.swagger.io/api/v3/openapi.json
-    openapi-to-mcp ./api-spec.yaml -o ./my-mcp-server
-    openapi-to-mcp spec.json --name my-product
-`);
-  process.exit(0);
-}
-
-function getFlag(flag: string, alias?: string): string | undefined {
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === flag || (alias && args[i] === alias)) {
-      return args[i + 1];
+    // Check if output directory exists
+    if (!opts.force && existsSync(outputDir)) {
+      console.error(`Error: Output directory already exists: ${outputDir}`);
+      console.error("Use --force to overwrite.");
+      process.exit(1);
     }
-  }
-  return undefined;
-}
 
-if (args.includes("-h") || args.includes("--help") || args.length === 0) {
-  usage();
-}
+    console.log(`Generating MCP server "${serverName}" with ${parsed.tools.length} tools...`);
 
-const specSource = args.find((a) => !a.startsWith("-") && args.indexOf(a) === 0) ?? args[0];
-if (!specSource || specSource.startsWith("-")) {
-  console.error("Error: spec file or URL is required\n");
-  usage();
-}
+    if (parsed.tools.length === 0) {
+      console.error("Warning: No operations found. Check that your spec has paths defined.");
+      if (opts.include) {
+        console.error(`  --include filter: ${opts.include.join(", ")}`);
+        console.error("  Try broader patterns or remove the filter.");
+      }
+    }
 
-async function main() {
-  console.log(`Loading spec from ${specSource}...`);
-  const spec = await loadSpec(specSource);
-  const parsed = parseSpec(spec);
+    if (parsed.tools.length > 20) {
+      console.log(
+        `Note: Found ${parsed.tools.length} operations. Use --include/--exclude to keep only the most useful tools (5-10 is ideal).`,
+      );
+    }
 
-  const serverName = getFlag("--name", "-n") ?? toSlug(parsed.title);
-  const outputDir = resolve(getFlag("--output", "-o") ?? `./${serverName}-mcp`);
+    const files = await generate({
+      outputDir,
+      serverName,
+      baseUrl: parsed.baseUrl,
+      tools: parsed.tools,
+    });
 
-  console.log(`Generating MCP server "${serverName}" with ${parsed.tools.length} tools...`);
-
-  if (parsed.tools.length === 0) {
-    console.error("Warning: No operations found in the spec. Check that your spec has paths defined.");
-  }
-
-  // Cap at 20 tools — lean by design
-  if (parsed.tools.length > 20) {
-    console.log(`Note: Found ${parsed.tools.length} operations. Consider keeping only the most useful tools (5-10 is ideal).`);
-  }
-
-  const files = await generate({
-    outputDir,
-    serverName,
-    baseUrl: parsed.baseUrl,
-    tools: parsed.tools,
+    console.log(`\nGenerated ${files.length} files in ${outputDir}/\n`);
+    console.log("Next steps:");
+    console.log(`  cd ${outputDir}`);
+    console.log("  npm install");
+    console.log("  cp .env.example .env   # fill in your API key");
+    console.log("  npm run build");
+    console.log("  npm start");
+    console.log();
   });
-
-  console.log(`\nGenerated ${files.length} files in ${outputDir}/\n`);
-  console.log("Next steps:");
-  console.log(`  cd ${outputDir}`);
-  console.log("  npm install");
-  console.log("  cp .env.example .env   # fill in your API key");
-  console.log("  npm run build");
-  console.log("  npm start");
-  console.log();
-}
 
 function toSlug(s: string): string {
   return s
@@ -93,7 +76,7 @@ function toSlug(s: string): string {
     .replace(/^-|-$/g, "");
 }
 
-main().catch((error) => {
+program.parseAsync().catch((error) => {
   console.error("Error:", error.message);
   process.exit(1);
 });

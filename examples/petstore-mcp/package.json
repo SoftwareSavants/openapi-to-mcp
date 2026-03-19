@@ -8,8 +8,10 @@
     "build": "tsc",
     "start": "node --env-file=.env dist/index.js",
     "start:http": "node --env-file=.env dist/index.js --http",
+    "start:sse": "node --env-file=.env dist/index.js --sse",
     "dev": "tsx --env-file=.env src/index.ts",
-    "dev:http": "tsx --env-file=.env src/index.ts --http"
+    "dev:http": "tsx --env-file=.env src/index.ts --http",
+    "dev:sse": "tsx --env-file=.env src/index.ts --sse"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

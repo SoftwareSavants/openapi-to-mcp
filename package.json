@@ -1,11 +1,14 @@
 {
   "name": "openapi-to-mcp",
   "version": "1.0.0",
-  "description": "Generate a lean MCP server from an OpenAPI spec",
+  "description": "Generate a lean MCP server from any OpenAPI spec",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/api.js",
   "bin": {
     "openapi-to-mcp": "dist/index.js"
+  },
+  "exports": {
+    ".": "./dist/api.js"
   },
   "scripts": {
     "build": "tsc",
@@ -13,6 +16,8 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@apidevtools/swagger-parser": "^10.1.1",
+    "commander": "^13.1.0",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
@@ -26,5 +31,13 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/SoftwareSavants/openapi-to-mcp"
-  }
+  },
+  "keywords": [
+    "openapi",
+    "mcp",
+    "model-context-protocol",
+    "code-generator",
+    "claude",
+    "ai-agent"
+  ]
 }
