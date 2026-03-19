@@ -1,6 +1,6 @@
 {
   "name": "@softwaresavants/openapi-to-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Generate a lean MCP server from any OpenAPI spec",
   "type": "module",
   "main": "dist/api.js",
