@@ -1,5 +1,5 @@
 {
-  "name": "openapi-to-mcp",
+  "name": "@softwaresavants/openapi-to-mcp",
   "version": "1.0.0",
   "description": "Generate a lean MCP server from any OpenAPI spec",
   "type": "module",
@@ -30,7 +30,7 @@
   "homepage": "https://www.software-savants.com/en/mcp-development",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SoftwareSavants/openapi-to-mcp"
+    "url": "git+https://github.com/SoftwareSavants/openapi-to-mcp.git"
   },
   "keywords": [
     "openapi",

@@ -3,14 +3,14 @@
 Generate a lean MCP server from any OpenAPI spec. One command — give it a spec URL or file, get a complete TypeScript MCP server with tools for every API endpoint.
 
 <!-- TODO: Record terminal GIF and replace this section
-     Run: npx openapi-to-mcp https://petstore3.swagger.io/api/v3/openapi.json
+     Run: npx @softwaresavants/openapi-to-mcp https://petstore3.swagger.io/api/v3/openapi.json
      Tool: https://github.com/faressoft/terminalizer or asciinema
 -->
 
 ## Quick Start
 
 ```bash
-npx openapi-to-mcp https://petstore3.swagger.io/api/v3/openapi.json
+npx @softwaresavants/openapi-to-mcp https://petstore3.swagger.io/api/v3/openapi.json
 ```
 
 That's it. You now have a working MCP server in `./swagger-petstore-openapi-3-0-mcp/`.
@@ -50,7 +50,7 @@ openapi-to-mcp spec.json -o ./existing-dir --force
 Use as a library in your own tools:
 
 ```typescript
-import { generateMcpServer } from "openapi-to-mcp";
+import { generateMcpServer } from "@softwaresavants/openapi-to-mcp";
 
 // Parse only (no file output)
 const { spec } = await generateMcpServer("https://api.example.com/openapi.json");

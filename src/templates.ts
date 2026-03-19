@@ -464,7 +464,7 @@ main().catch((error) => {
 export function readme(serverName: string, baseUrl: string, toolCount: number): string {
   return `# ${serverName} MCP Server
 
-Auto-generated MCP server with ${toolCount} tools. Built from an OpenAPI spec using [openapi-to-mcp](https://github.com/SoftwareSavants/openapi-to-mcp).
+Auto-generated MCP server with ${toolCount} tools. Built from an OpenAPI spec using [@softwaresavants/openapi-to-mcp](https://github.com/SoftwareSavants/openapi-to-mcp).
 
 ## Quick Start
 

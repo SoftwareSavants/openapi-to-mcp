@@ -2,7 +2,7 @@
  * Programmatic API for openapi-to-mcp.
  *
  * Usage:
- *   import { generateMcpServer } from "openapi-to-mcp";
+ *   import { generateMcpServer } from "@softwaresavants/openapi-to-mcp";
  *
  *   const result = await generateMcpServer("https://petstore3.swagger.io/api/v3/openapi.json", {
  *     outputDir: "./petstore-mcp",
