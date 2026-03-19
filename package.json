@@ -1,0 +1,30 @@
+{
+  "name": "openapi-to-mcp",
+  "version": "1.0.0",
+  "description": "Generate a lean MCP server from an OpenAPI spec",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "openapi-to-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "author": "Software Savants <hello@software-savants.com>",
+  "license": "MIT",
+  "homepage": "https://www.software-savants.com/en/mcp-development",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SoftwareSavants/openapi-to-mcp"
+  }
+}
