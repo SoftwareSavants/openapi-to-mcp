@@ -25,3 +25,10 @@ jobs:
           cd /tmp/petstore-test
           npm install
           npx tsc --noEmit
+
+      - name: Xquik fixture smoke test
+        run: |
+          npx tsx src/index.ts test/fixtures/xquik-read-api.openapi.json --output=/tmp/xquik-test --name=xquik-read-api --include=/api/v1/x/tweets/search --force
+          cd /tmp/xquik-test
+          npm install
+          npx tsc --noEmit
